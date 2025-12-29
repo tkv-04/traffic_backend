@@ -173,10 +173,10 @@
             lineChart = new Chart(document.getElementById('lineChart'), {
                 type: 'line',
                 data: {
-                    labels: graphData.map(d => d.time),
+                    labels: graphData.map(d => d.timestamp),
                     datasets: [{
-                        label: 'Vehicle Count',
-                        data: graphData.map(d => d.count),
+                        label: 'Congestion %',
+                        data: graphData.map(d => d.percentage),
                         borderColor: '#3498db',
                         backgroundColor: 'rgba(52, 152, 219, 0.1)',
                         fill: true,
@@ -186,7 +186,7 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    scales: { y: { beginAtZero: true } }
+                    scales: { y: { beginAtZero: true, max: 100 } }
                 }
             });
 

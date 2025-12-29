@@ -59,6 +59,9 @@ class TrafficProcessor:
                     # Standard Firebase: {"id": {data}, "id2": {data}}
                     for record in valid_data.values():
                         if isinstance(record, dict):
+                            # Use date_key if record doesn't have its own date
+                            if 'date' not in record:
+                                record['date'] = date_key
                             all_records.append(record)
                 elif isinstance(valid_data, list):
                     # Array-like: [{"id": {data}}, ...] or [{data}, {data}]
@@ -67,10 +70,14 @@ class TrafficProcessor:
                             # Check if it's a wrapper {"id": {data}} or just {data}
                             # A simple heuristic: check for known keys like 'vehicle_count'
                             if 'vehicle_count' in item:
+                                if 'date' not in item:
+                                    item['date'] = date_key
                                 all_records.append(item)
                             else:
                                 for sub_item in item.values():
                                      if isinstance(sub_item, dict):
+                                         if 'date' not in sub_item:
+                                             sub_item['date'] = date_key
                                          all_records.append(sub_item)
 
         if not all_records:
@@ -114,15 +121,25 @@ class TrafficProcessor:
 
             # Report generation
             if category not in reports_map:
+                # Create readable reason - combine category with the actual reason
+                if reason != category and reason != 'Unknown':
+                    readable_reason = f"{category} ({reason})"
+                else:
+                    readable_reason = category
                 reports_map[category] = {
-                    "reason": f"{category} ({reason[:50]}...)", # Simplified for display
+                    "reason": readable_reason,
                     "suggestion": record.get('suggestion', "No suggestion provided")
                 }
 
-            # Graph Data
+            # Graph Data - include date and congestion reason
             ts = record.get('timestamp')
             if ts:
-                timestamps.append({'t': ts, 'v': v_count})
+                timestamps.append({
+                    't': ts,
+                    'v': v_count,
+                    'date': record.get('date', 'Unknown'),
+                    'reason': category
+                })
 
         # Calculate Percentages
         congestion_stats = []
@@ -136,32 +153,40 @@ class TrafficProcessor:
                 "percentage": percentage
             })
 
-        # Format Time (Latest)
+        # Format Time (Latest) - use 12-hour format like "3:30"
         timestamps.sort(key=lambda x: x['t'])
         latest_time_str = "N/A"
         if timestamps:
             latest_ts = timestamps[-1]['t']
-            # Convert timestamp to HH:MM format
             dt_obj = datetime.fromtimestamp(latest_ts)
-            latest_time_str = dt_obj.strftime("%H:%M")
+            # Use %-H for 12-hour without leading zero on Windows use %#H
+            hour = dt_obj.hour % 12 or 12  # Convert to 12-hour format
+            minute = dt_obj.strftime("%M")
+            latest_time_str = f"{hour}:{minute}"
 
-        # Graph Data Formatting
-        # Group by time (minute-level) to avoid jagged lines if multiple updates per second
+        # Graph Data Formatting - use percentage from congestion stats
+        # Create a lookup for reason percentages
+        reason_percentages = {c['name']: c['percentage'] for c in congestion_stats}
+        
         graph_data = []
         for point in timestamps:
-             dt = datetime.fromtimestamp(point['t'])
-             time_label = dt.strftime("%H:%M:%S")
-             graph_data.append({
-                 "time": time_label,
-                 "count": point['v']
-             })
+            dt = datetime.fromtimestamp(point['t'])
+            hour_g = dt.hour % 12 or 12
+            time_label = f"{hour_g}:{dt.strftime('%M:%S')}"
+            # Combine time and date into single timestamp field
+            timestamp_str = f"{time_label},{point['date']}"
+            graph_data.append({
+                "timestamp": timestamp_str,
+                "percentage": reason_percentages.get(point['reason'], 0),
+                "reason": point['reason']
+            })
 
         return {
             "vehicleCount": total_vehicles,
             "time": latest_time_str,
             "congestion": congestion_stats,
             "report": list(reports_map.values()),
-            "graph": graph_data 
+            "graph": graph_data
         }
 
 if __name__ == "__main__":
